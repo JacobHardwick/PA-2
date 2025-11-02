@@ -240,7 +240,8 @@ int main () {
             strcpy(cwd, "unknown");
         }
 
-        cout << time_str << " " << username << ":" << cwd << "$ ";
+        cout << username << " " << time_str << " :" << cwd << "$";
+        cout.flush();
         
         string input;
         getline(cin, input);
