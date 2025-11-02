@@ -220,10 +220,12 @@ void exec_piped_commands(vector<Command*> &commands) {
 }
 
 int main () {
+    int original_stdin = dup(STDIN_FILENO);
 
     for (;;) {
 
         reap_bg_processess();
+        dup2(original_stdin, STDIN_FILENO);
 
         time_t now = time(nullptr);
         char time_str[100];
@@ -240,7 +242,7 @@ int main () {
             strcpy(cwd, "unknown");
         }
 
-        cout << username << " " << time_str << " :" << cwd << "$";
+        cout << username << " " << time_str << ":" << cwd << "$ ";
         cout.flush();
         
         string input;
@@ -249,6 +251,10 @@ int main () {
         if (input == "exit") {
             cout << RED << "Now exiting shell..." << endl << "Goodbye" << NC << endl;
             break;
+        }
+
+        if (input.empty()) {
+            continue;
         }
 
         Tokenizer tknr(input);
@@ -288,5 +294,6 @@ int main () {
             }
         }
     }
+    close(original_stdin);
     return 0;
 }
