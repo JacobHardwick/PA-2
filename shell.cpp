@@ -233,7 +233,7 @@ int main () {
         
         const char* username = getenv("USER");
         if (username == nullptr) {
-            username = "user";
+            username = "root";
         }
 
         char cwd[1024];
