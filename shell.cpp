@@ -21,11 +21,13 @@ using namespace std;
 string prev_dir = "";
 vector<pid_t> bg_pids;
 
+// function to reap background processess
 void reap_bg_processess() {
     for (auto it = bg_pids.begin(); it != bg_pids.end();) {
         int status;
         pid_t result = waitpid(*it, &status, WNOHANG);
         if (result > 0) {
+            // removes process once finished
             it = bg_pids.erase(it);
         } else {
             it++;
@@ -33,6 +35,7 @@ void reap_bg_processess() {
     }
 }
 
+// function to handle cd commands
 bool handle_cd(const vector<string> &args) {
     if (args.size() > 2) {
         cerr << "cd: too many arguments" << endl;
@@ -47,6 +50,7 @@ bool handle_cd(const vector<string> &args) {
 
     string curr_dir = cwd;
 
+    // if just cd or cd ~, goes back to home
     if (args.size() == 1 || args[1] == "~") {
         const char* home = getenv("HOME");
         if (home == nullptr) {
@@ -57,8 +61,11 @@ bool handle_cd(const vector<string> &args) {
             perror("chdir");
             return false;
         }
+        // update prev directory
         prev_dir = curr_dir;
-    } else if (args[1] == "-") {
+    } 
+    // if cd -, goes back to prev directory
+    else if (args[1] == "-") {
         if (prev_dir.empty()) {
             cerr << "cd: OLDPWD not set" << endl;
             return false;
@@ -69,7 +76,9 @@ bool handle_cd(const vector<string> &args) {
         }
         string temp = prev_dir;
         prev_dir = curr_dir;
-    } else {
+    } 
+    // goes to specified directory
+    else {
         if (chdir(args[1].c_str()) < 0) {
             perror("chdir");
             return false;
@@ -79,6 +88,7 @@ bool handle_cd(const vector<string> &args) {
     return true;
 }
 
+// convert vector string to char** for execvp
 char** vec_to_char(const vector<string> &vec) {
     char** arr = new char*[vec.size() + 1];
     for (size_t i = 0; i < vec.size(); i++) {
@@ -88,6 +98,7 @@ char** vec_to_char(const vector<string> &vec) {
     return arr;
 }
 
+// executes single command
 void exec_single_command(Command* cmd, bool is_background) {
     pid_t pid = fork();
     if (pid < 0) {
@@ -96,6 +107,7 @@ void exec_single_command(Command* cmd, bool is_background) {
     }
 
     if (pid == 0) {
+        // handle input
         if (cmd->hasInput()) {
             int fd_in = open(cmd->in_file.c_str(), O_RDONLY);
             if (fd_in < 0) {
@@ -105,7 +117,7 @@ void exec_single_command(Command* cmd, bool is_background) {
             dup2(fd_in, STDIN_FILENO);
             close(fd_in);
         }
-
+        // handle output
         if (cmd->hasOutput()) {
             int fd_out = open(cmd->out_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd_out < 0) {
@@ -116,6 +128,7 @@ void exec_single_command(Command* cmd, bool is_background) {
             close(fd_out);
         }
 
+        // execute command
         char** args = vec_to_char(cmd->args);
         if (execvp(args[0], args) < 0) {
             perror("execvp");
@@ -123,6 +136,7 @@ void exec_single_command(Command* cmd, bool is_background) {
         }
     } else {
         if (is_background) {
+            // add to background process list
             bg_pids.push_back(pid);
         } else {
             int status = 0;
@@ -134,16 +148,19 @@ void exec_single_command(Command* cmd, bool is_background) {
     }
 }
 
+// execute piped commands
 void exec_piped_commands(vector<Command*> &commands) {
     int num_commands = commands.size();
     vector<pid_t> pids;
 
+    // save original stdin
     int saved_stdin = dup(STDOUT_FILENO);
     int prev_pipe_read = -1;
 
     for (int i = 0; i < num_commands; i++) {
         int pipefd[2];
 
+        // create pipe for all commands except last
         if (i < num_commands - 1) {
             if (pipe(pipefd) < 0) {
                 perror("pipe");
@@ -158,6 +175,7 @@ void exec_piped_commands(vector<Command*> &commands) {
         }
 
         if (pid == 0) {
+            // handle input
             if (i == 0 && commands[i]->hasInput()) {
                 int fd_in = open(commands[i]->in_file.c_str(), O_RDONLY);
                 if (fd_in < 0) {
@@ -174,6 +192,7 @@ void exec_piped_commands(vector<Command*> &commands) {
                 close(prev_pipe_read);
             }
 
+            // handle output
             if (i == num_commands - 1) {
                 if (commands[i]->hasOutput()) {   
                     int fd_out = open(commands[i]->out_file.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -191,6 +210,7 @@ void exec_piped_commands(vector<Command*> &commands) {
                 close(pipefd[0]);
             }
 
+            // execute command
             char** args = vec_to_char(commands[i]->args);
             if (execvp(args[0], args) < 0) {
                 perror("execvp");
@@ -210,6 +230,7 @@ void exec_piped_commands(vector<Command*> &commands) {
         }
     }
 
+    // restore stdin
     dup2(saved_stdin, STDIN_FILENO);
     close(saved_stdin);
 
@@ -220,31 +241,37 @@ void exec_piped_commands(vector<Command*> &commands) {
 }
 
 int main () {
+    // save original stdin at start
     int original_stdin = dup(STDIN_FILENO);
 
     for (;;) {
-
+        // reap any background processess and restore stdin
         reap_bg_processess();
         dup2(original_stdin, STDIN_FILENO);
 
+        // get current time
         time_t now = time(nullptr);
         char time_str[100];
         strftime(time_str, sizeof(time_str), "%b %d %H:%M:%S", localtime(&now));
         
+        // get username or set to root if none
         const char* username = getenv("USER");
         if (username == nullptr) {
             username = "root";
         }
 
+        // get current directory
         char cwd[1024];
         if (getcwd(cwd, sizeof(cwd)) == nullptr) {
             perror("getcwd");
             strcpy(cwd, "unknown");
         }
 
+        // outputs prompt
         cout << username << " " << time_str << ":" << cwd << "$ ";
         cout.flush();
         
+        // get user input command
         string input;
         getline(cin, input);
 
@@ -257,11 +284,13 @@ int main () {
             continue;
         }
 
+        // get tokenized commands
         Tokenizer tknr(input);
         if (tknr.hasError()) {
             continue;
         }
 
+        // check if cd command
         if (tknr.commands.size() == 1 &&
                 tknr.commands[0]->args.size() > 0 &&
                 tknr.commands[0]->args[0] == "cd") {
@@ -269,11 +298,13 @@ int main () {
             continue;
         }
 
+        // check if background process
         bool is_background = false;
         if (tknr.commands.size() > 0) {
             is_background = tknr.commands.back()->isBackground();
         }
 
+        // execute commands
         if (tknr.commands.size() == 1) {
             exec_single_command(tknr.commands[0], is_background);
         } else {
