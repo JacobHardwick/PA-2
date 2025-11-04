@@ -325,6 +325,7 @@ int main () {
             }
         }
     }
+    // close and exit
     close(original_stdin);
     return 0;
 }
